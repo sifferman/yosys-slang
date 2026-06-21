@@ -1178,6 +1178,17 @@ RTLIL::SigSpec EvalContext::operator()(ast::Expression const &expr)
 			expr.kind == ast::ExpressionKind::UnbasedUnsizedIntegerLiteral ||
 			expr.kind == ast::ExpressionKind::NullLiteral ||
 			expr.kind == ast::ExpressionKind::StringLiteral) {
+		// This `EvalContext` is reused for every elaboration-time constant evaluation
+		// in the netlist, but slang's `maxConstexprSteps` budget is meant to bound a
+		// *single* constant evaluation. Without resetting, the step counter accumulates
+		// across every constexpr in the design, so a design with enough constant-function
+		// work (e.g. several verilog-ethernet CRC `lfsr_mask` instances) spuriously trips
+		// the limit — and slang then asserts on an empty SourceLocation in
+		// `EvalContext::step` instead of erroring cleanly. Reset before each independent
+		// top-level evaluation so the budget is per-evaluation, as intended. (No state is
+		// lost: this context's diagnostics/stack are not consumed by the frontend, and the
+		// eval stack is empty between top-level evaluations.)
+		this->const_.reset();
 		auto const_result = expr.eval(this->const_);
 		if (const_result) {
 			auto converted = netlist.convert_const(const_result, expr.sourceRange.start());
